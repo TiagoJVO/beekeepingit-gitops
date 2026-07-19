@@ -1,0 +1,43 @@
+name: GitOps CI
+
+# Validates the Flux GitOps manifests on every change: schema-checks every
+# GitRepository/Kustomization/HelmRelease against the upstream Flux CRD
+# schemas. No live cluster is used here — applying to a cluster is a manual
+# one-time bootstrap (README.md). Moved out of the beekeepingit code repo with
+# the manifests themselves (D-27/ADR-0018).
+
+on:
+  pull_request:
+    paths:
+      - "clusters/**"
+      - "apps/**"
+      - ".github/workflows/gitops-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "clusters/**"
+      - "apps/**"
+      - ".github/workflows/gitops-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  kubeconform:
+    name: kubeconform (Flux CRD schemas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: kubeconform
+        uses: docker://ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e # v0.8.0
+        with:
+          # NOTE: no shell parses these args (docker:// step, not `run:`), so they must
+          # NOT be shell-quoted — a real shell would strip the quotes below, but the
+          # Actions runner just whitespace-splits, so quoting them breaks the URL (the
+          # literal quote characters end up embedded in it).
+          args: >-
+            -strict -summary
+            -schema-location default
+            -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+            clusters apps

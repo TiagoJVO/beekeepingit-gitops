@@ -1,0 +1,24 @@
+# Enables OTLP tracing on the k3d-bundled Traefik so the **gateway** span joins
+# the distributed trace (walking-skeleton.md §11.3, #23 AC / NFR-OBS-1: "one trace
+# spanning gateway → sync → apiaries"). k3s reconciles this HelmChartConfig into
+# the `traefik` HelmChart it manages in kube-system, redeploying Traefik with the
+# tracing config below.
+#
+# Depends on the observability stack's OTel Collector (infra/helm/observability,
+# its own Flux HelmRelease — deliberately NOT part of the dev bring-up, #87/ADR-0013).
+# Apply this only once that collector Service exists; without a reachable endpoint
+# Traefik still serves traffic, it just drops spans.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    tracing:
+      otlp:
+        enabled: true
+        grpc:
+          enabled: true
+          endpoint: otel-collector.beekeepingit-dev.svc.cluster.local:4317
+          insecure: true

@@ -1,0 +1,87 @@
+# Authentik (D-7, ADR-0016) as its own Flux-managed release, sourced directly from
+# the upstream chart repo — not nested inside the umbrella release. Same reasoning
+# as the MinIO HelmRelease: Flux's GitRepository-sourced charts (the umbrella) only
+# resolve their own top-level dependencies from
+# what's checked into Git; they don't recursively `helm dependency build` into a
+# subchart's own vendored dependency. Sourcing this chart via HelmRepository instead
+# sidesteps that entirely (source-controller fetches the already-packaged chart from
+# the repo index — nothing to vendor). See ADR-0012 (pattern) and ADR-0016 (the swap).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://charts.goauthentik.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-dev
+  # Pinned explicitly: Flux defaults an unset releaseName to
+  # "<targetNamespace>-<HelmRelease name>" when they differ. Pinning it keeps the
+  # chart's generated resource names short and predictable — the Services the
+  # gateway subchart / the Go services target are "authentik-server" and
+  # "authentik-postgresql", derived from this releaseName.
+  releaseName: authentik
+  install:
+    createNamespace: true
+    # Bundled Postgres schema init + Authentik migrations + blueprint apply take a
+    # while on a cold pull; give the release room so Flux doesn't mark it failed
+    # mid-bootstrap (mirrors the CI/dev-up timeouts).
+    timeout: 15m
+  upgrade:
+    timeout: 15m
+  # The umbrella release (infra/gitops/apps/dev/beekeepingit-helmrelease.yaml) must
+  # land first — it creates the config Secret (beekeepingit-authentik-config), the
+  # Postgres password Secret (beekeepingit-authentik-postgresql), and the blueprint
+  # ConfigMap (beekeepingit-authentik-blueprint) this release's `values` reference
+  # by name below.
+  dependsOn:
+    - name: beekeepingit
+  chart:
+    spec:
+      chart: authentik
+      # Pinned (oidc-integration.md §8): the version validated end-to-end with the
+      # blueprint. Bump deliberately + re-run the OIDC validation, never float.
+      version: "2026.5.4"
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: flux-system
+  values:
+    # The current Authentik chart pulls a Bitnami-published Postgres image; allow it
+    # explicitly (the chart pins the official `postgres` upstream, so the Bitnami
+    # image-catalog risk that motivated moving off Bitnami elsewhere doesn't bite —
+    # see ADR-0016). Bundled Postgres, no Redis (dropped in the current chart).
+    global: { security: { allowInsecureImages: true } }
+    # Server/worker read the generated secret key + bootstrap creds + Postgres
+    # connection from the umbrella-created Secret (see charts/authentik).
+    authentik: { existingSecret: { secretName: beekeepingit-authentik-config } }
+    server:
+      replicas: 1
+      # No ingress from the chart — the gateway subchart routes auth.beekeepingit.local
+      # → this Service (authentik-server) itself (ADR-0012).
+      ingress: { enabled: false }
+      resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 1, memory: 1Gi } }
+    worker:
+      replicas: 1
+      resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 1Gi } }
+    postgresql:
+      enabled: true
+      auth:
+        username: authentik
+        database: authentik
+        # `password` key = AUTHENTIK_POSTGRESQL__PASSWORD in the config Secret above
+        # (same generated value — see charts/authentik/_helpers.tpl).
+        existingSecret: beekeepingit-authentik-postgresql
+      primary:
+        persistence: { enabled: true, size: 1Gi }
+    # Deliver the declarative blueprint (provider/application/group/seed user) to the
+    # worker's file-discovery dir via this ConfigMap (created by the umbrella).
+    blueprints: { configMaps: [beekeepingit-authentik-blueprint] }

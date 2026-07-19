@@ -1,0 +1,40 @@
+# Observability stack (#87, NFR-OBS-1) as its own Flux-managed release
+# (infra/helm/observability), separate from the beekeepingit umbrella. It CANNOT
+# live inside that umbrella: its Loki/Tempo need MinIO's buckets to start (Tempo
+# hard-fails at boot without its bucket — confirmed live), and MinIO's own
+# HelmRelease dependsOn the umbrella (for the root-credentials Secret) — nesting
+# this stack in the umbrella therefore deadlocks a fresh install. See ADR-0013.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: observability
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-dev
+  # Pinned for the same reason as every other HelmRelease here (ADR-0012): Flux
+  # otherwise defaults the Helm release name to "<targetNamespace>-<name>",
+  # making generated resource names unpredictable.
+  releaseName: observability
+  install:
+    createNamespace: true
+  # Ordering that breaks the #87 deadlock: beekeepingit (creates the
+  # root-credentials Secret this stack's Loki/Tempo read) -> minio (creates the
+  # loki/tempo buckets via its post-install job) -> this. `beekeepingit` is
+  # transitively guaranteed via minio's own dependsOn, but stated explicitly.
+  dependsOn:
+    - name: beekeepingit
+    - name: minio
+  chart:
+    spec:
+      chart: ./infra/helm/observability
+      # Same reasoning as the beekeepingit HelmRelease: track the Git revision so
+      # ordinary values/template edits redeploy without a Chart.yaml version bump.
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: beekeepingit
+        namespace: flux-system
+  values:
+    global:
+      namespace: beekeepingit-dev

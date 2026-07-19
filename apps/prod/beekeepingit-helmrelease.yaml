@@ -1,0 +1,86 @@
+# Deploys the umbrella chart onto a future `prod` cluster — NOT deployed
+# anywhere yet (D-26: prod is deliberately deferred until Q-DR and #90 land
+# at M6, see environments/prod.yaml's header). Mirrors
+# apps/staging/beekeepingit-helmrelease.yaml exactly, including every fix
+# that first staging bring-up found, so prod doesn't rediscover them from
+# scratch — see that file's own comments for the full rationale behind each
+# one. Values below mirror environments/prod.yaml; every host-shaped value
+# is a clearly-marked placeholder (no prod cluster/IP/domain exists yet).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: beekeepingit
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-prod
+  releaseName: beekeepingit
+  install:
+    createNamespace: true
+    # See apps/staging/beekeepingit-helmrelease.yaml's matching comment: a
+    # from-scratch install deadlocks without this — the schema-grants
+    # post-install hook every DB-backed service/PowerSync depends on only
+    # runs after Helm's wait-for-ready succeeds, but those Deployments can't
+    # pass that wait without the hook.
+    disableWait: true
+    timeout: 10m
+    remediation:
+      retries: 3
+  upgrade:
+    disableWait: true
+    timeout: 10m
+  chart:
+    spec:
+      chart: ./infra/helm/beekeepingit
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: beekeepingit
+        namespace: flux-system
+  values:
+    global:
+      environment: prod
+      namespace: beekeepingit-prod
+      appOrigin: https://app.beekeepingit.example # TODO: real domain
+    gateway:
+      appHost: app.beekeepingit.example # TODO: real domain
+      authHost: auth.beekeepingit.example # TODO: real domain
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+    services:
+      oidc:
+        issuerUrl: https://auth.beekeepingit.example/application/o/beekeepingit/ # TODO: real domain
+        discoveryUrl: http://authentik-server/application/o/beekeepingit/
+        audience: beekeepingit-pwa
+      # Same 7 services as apps/staging/ — see that file's comment. Tags are set
+      # by the release-triggered tag-bump PR (D-27, ADR-0018): an un-suffixed
+      # (non-`-rc`) release is approval-gated in the `production` GitHub
+      # Environment, publishes that version's images, and opens a PR bumping the
+      # tags below. v0.0.0 is an inert placeholder (no release cut yet) and stays
+      # until such a PR lands AND a real prod cluster exists to apply this to.
+      services:
+        identity:
+          tag: v0.0.0
+        organizations:
+          tag: v0.0.0
+        apiaries:
+          tag: v0.0.0
+        activities:
+          tag: v0.0.0
+        journeys:
+          tag: v0.0.0
+        todos:
+          tag: v0.0.0
+        sync:
+          tag: v0.0.0
+    pwa:
+      image:
+        tag: latest # TODO: no client-prod build exists yet — see release-deploy.yml's own comment and FOLLOWUPS.md
+    # networkpolicy.gatewayNamespace intentionally NOT overridden (defaults
+    # to kube-system, charts/networkpolicy/values.yaml) — prod's own cluster
+    # bring-up hasn't been designed yet, so which namespace its ingress
+    # controller will live in isn't known. Revisit alongside a prod
+    # equivalent of infra/cluster/scaleway-up.sh once that exists — see that
+    # script's own gatewayNamespace: traefik override for the pattern this
+    # will likely need too.

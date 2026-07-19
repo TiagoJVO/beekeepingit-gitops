@@ -1,0 +1,45 @@
+# Bootstrap objects for the `staging` cluster (Scaleway Kapsule, D-26): where
+# Flux pulls from, and the self-referential Kustomization that keeps everything
+# under clusters/staging/ (including this file) reconciled from Git. See
+# README.md for the one-time `kubectl apply` bootstrap step and
+# clusters/dev/flux-system.yaml for the pattern this mirrors.
+#
+# TWO GitRepository sources (D-27/ADR-0018 repo split): the MANIFESTS
+# (clusters/, apps/) live in this beekeepingit-gitops repo; the Helm CHART is
+# sourced from the beekeepingit code repo. Both track `main`.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: beekeepingit-gitops
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/TiagoJVO/beekeepingit-gitops
+  ref:
+    branch: main
+---
+# Chart source: apps/staging/beekeepingit-helmrelease.yaml references this by
+# name for `chart: ./infra/helm/beekeepingit` in the code repo.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: beekeepingit
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/TiagoJVO/beekeepingit
+  ref:
+    branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: beekeepingit-gitops
+  path: ./clusters/staging
+  prune: true

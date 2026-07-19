@@ -1,0 +1,60 @@
+# Authentik (D-7, ADR-0016) for the `staging` cluster — mirrors
+# apps/dev/authentik-helmrelease.yaml exactly (same chart version, pinned
+# deliberately per that file's own comment: "never float"), namespace-adjusted.
+# Load-bearing: without this, staging has no OIDC IdP at all and nothing can
+# log in — this is not optional the way observability is.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://charts.goauthentik.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-staging
+  releaseName: authentik
+  install:
+    createNamespace: true
+    timeout: 15m
+  upgrade:
+    timeout: 15m
+  # The umbrella release (apps/staging/beekeepingit-helmrelease.yaml) must land
+  # first — it creates the config/Postgres Secrets + blueprint ConfigMap this
+  # release's `values` reference by name below.
+  dependsOn:
+    - name: beekeepingit
+  chart:
+    spec:
+      chart: authentik
+      version: "2026.5.4"
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: flux-system
+  values:
+    global: { security: { allowInsecureImages: true } }
+    authentik: { existingSecret: { secretName: beekeepingit-authentik-config } }
+    server:
+      replicas: 1
+      ingress: { enabled: false }
+      resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 1, memory: 1Gi } }
+    worker:
+      replicas: 1
+      resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 1Gi } }
+    postgresql:
+      enabled: true
+      auth:
+        username: authentik
+        database: authentik
+        existingSecret: beekeepingit-authentik-postgresql
+      primary:
+        persistence: { enabled: true, size: 1Gi }
+    blueprints: { configMaps: [beekeepingit-authentik-blueprint] }

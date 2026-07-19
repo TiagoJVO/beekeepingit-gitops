@@ -1,0 +1,56 @@
+# Authentik (D-7, ADR-0016) for a future `prod` cluster — see
+# beekeepingit-helmrelease.yaml's header (not deployed yet, prepared per
+# D-26). Mirrors apps/staging/authentik-helmrelease.yaml exactly,
+# namespace-adjusted — see that file's comments for the full rationale.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://charts.goauthentik.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-prod
+  releaseName: authentik
+  install:
+    createNamespace: true
+    timeout: 15m
+  upgrade:
+    timeout: 15m
+  dependsOn:
+    - name: beekeepingit
+  chart:
+    spec:
+      chart: authentik
+      version: "2026.5.4"
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: flux-system
+  values:
+    global: { security: { allowInsecureImages: true } }
+    authentik: { existingSecret: { secretName: beekeepingit-authentik-config } }
+    server:
+      replicas: 1
+      ingress: { enabled: false }
+      resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 1, memory: 1Gi } }
+    worker:
+      replicas: 1
+      resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 1Gi } }
+    postgresql:
+      enabled: true
+      auth:
+        username: authentik
+        database: authentik
+        existingSecret: beekeepingit-authentik-postgresql
+      primary:
+        persistence: { enabled: true, size: 1Gi }
+    blueprints: { configMaps: [beekeepingit-authentik-blueprint] }

@@ -1,0 +1,76 @@
+# Deploys the umbrella chart (infra/helm/beekeepingit) the same way
+# `helm install ... -f environments/dev.yaml` does today (infra/README.md) —
+# `values` below mirrors that overlay; chart defaults (values.yaml) still
+# apply underneath, exactly as with the `-f` overlay.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: beekeepingit
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-dev
+  # Pinned so the Helm release name is a stable, predictable `beekeepingit`
+  # rather than Flux's default of `<targetNamespace>-<HelmRelease name>`
+  # (`beekeepingit-dev-beekeepingit`). This keeps the generated
+  # Secret/ConfigMap names — which the authentik/minio HelmReleases reference by
+  # literal name (ADR-0012) — matching a plain `helm install beekeepingit`, and
+  # keeps them short. NOTE: changing this on an already-installed release is a
+  # one-time migration, not a hot edit — Helm won't adopt resources owned by a
+  # differently-named release; see the "release-name migration" note in the
+  # README before this lands on a cluster that already ran the old name.
+  releaseName: beekeepingit
+  install:
+    createNamespace: true
+    # See apps/staging/beekeepingit-helmrelease.yaml's matching comment: a
+    # from-scratch install can deadlock, since charts/postgres/templates/
+    # schema-grants-job.yaml (a post-install hook every DB-backed service and
+    # PowerSync depend on) only runs after Helm's wait-for-ready succeeds,
+    # but those Deployments can't pass that wait without the hook. dev has
+    # never hit this because its Flux HelmRelease has only ever upgraded a
+    # release originally bootstrapped by a manual `helm install` (no `--wait`
+    # by default on the raw CLI) — this closes that latent gap so a
+    # from-scratch Flux-driven install (e.g. a rebuilt dev cluster) doesn't
+    # hit the same deadlock staging did (D-26).
+    disableWait: true
+    timeout: 10m
+    remediation:
+      retries: 3
+  upgrade:
+    disableWait: true
+    timeout: 10m
+  chart:
+    spec:
+      chart: ./infra/helm/beekeepingit
+      # Default reconcileStrategy (ChartVersion) only re-deploys when Chart.yaml's
+      # `version:` bumps. This chart's version won't move on every values/template
+      # edit, so track the Git revision instead — otherwise a merged change to the
+      # chart wouldn't actually sync (breaks the #86 "merge auto-deploys" criterion).
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: beekeepingit
+        namespace: flux-system
+  values:
+    global:
+      environment: dev
+      namespace: beekeepingit-dev
+    # Per-component image tags. dev is deliberately out of the release-triggered
+    # deploy path (D-27, ADR-0018): CI can't reach a local k3d cluster, so dev is
+    # never auto-deployed. These tags stay `latest`, and the local
+    # `helm ... -f environments/dev.yaml` dev loop reads the chart, not this file,
+    # so it keeps using `latest`/locally-imported images regardless. This
+    # HelmRelease matters only if dev is ever driven by Flux from Git.
+    services:
+      services:
+        identity:
+          tag: latest
+        organizations:
+          tag: latest
+        apiaries:
+          tag: latest
+        sync:
+          tag: latest
+    pwa:
+      image:
+        tag: latest

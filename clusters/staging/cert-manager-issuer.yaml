@@ -1,0 +1,28 @@
+# Cluster-scoped Let's Encrypt issuer (D-26) — lives here, not in the
+# beekeepingit umbrella chart, because ClusterIssuer isn't release-scoped:
+# it's cluster infrastructure, reused by any Ingress across any namespace/
+# release that opts in via the cert-manager.io/cluster-issuer annotation
+# (see charts/gateway/templates/ingress.yaml's certManager.enabled path).
+#
+# HTTP-01 via the Traefik ingress class already running on this cluster
+# (infra/cluster/scaleway-up.sh) — no DNS-01/provider API credentials
+# needed. "prod" here is Let's Encrypt's own production ACME endpoint
+# (real, browser-trusted certs) — unrelated to whether the BeekeepingIT
+# environment using it is itself called staging or prod; a *staging*
+# BeekeepingIT environment still wants a *real* cert to actually fix the
+# self-signed-cert browser warning, not Let's Encrypt's own staging/
+# untrusted-test CA.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: tiago.jvso@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

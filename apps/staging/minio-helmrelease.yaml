@@ -1,0 +1,53 @@
+# MinIO (NFR-ARC-2) for the `staging` cluster — mirrors
+# apps/dev/minio-helmrelease.yaml, namespace-adjusted. Note the `buckets:`
+# list is intentionally omitted here (dev's is loki/tempo, both
+# observability-only) since observability is deliberately deferred for this
+# first staging stand-up — add them back when infra/helm/observability/ is
+# wired up for staging.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: minio
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://charts.min.io/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: minio
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-staging
+  releaseName: minio
+  install:
+    createNamespace: true
+  # The umbrella release (apps/staging/beekeepingit-helmrelease.yaml) must
+  # land first — it creates the root-credentials Secret this release's
+  # `values.existingSecret` references by name.
+  dependsOn:
+    - name: beekeepingit
+  chart:
+    spec:
+      chart: minio
+      version: "5.4.0"
+      sourceRef:
+        kind: HelmRepository
+        name: minio
+        namespace: flux-system
+  values:
+    mode: standalone
+    replicas: 1
+    existingSecret: root-credentials
+    persistence:
+      enabled: true
+      size: 2Gi
+    resources:
+      requests: { cpu: 25m, memory: 128Mi }
+      limits: { cpu: 100m, memory: 256Mi }
+    ingress:
+      enabled: false
+    consoleIngress:
+      enabled: false

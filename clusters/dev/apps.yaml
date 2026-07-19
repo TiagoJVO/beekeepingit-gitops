@@ -1,0 +1,17 @@
+# Points Flux at the app-level manifests for the `dev` cluster (kept separate
+# from the bootstrap wiring in flux-system.yaml so per-environment app configs
+# can be added under apps/<env>/ without touching the bootstrap objects).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: beekeepingit-dev
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: beekeepingit-gitops
+  path: ./apps/dev
+  prune: true
+  dependsOn:
+    - name: flux-system

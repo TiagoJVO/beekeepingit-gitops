@@ -1,0 +1,20 @@
+# Cluster-scoped Let's Encrypt issuer for a future `prod` cluster — see
+# flux-system.yaml's header (not deployed yet, prepared per D-26). Mirrors
+# clusters/staging/cert-manager-issuer.yaml exactly; see that file's
+# comments for the full HTTP-01/ingress-class rationale. TODO: confirm the
+# ACME registration email once prod actually stands up — reusing staging's
+# for now, not necessarily final.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: tiago.jvso@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
