@@ -61,6 +61,14 @@ a published Release in the code repo makes CI publish the version's images and o
 against this repo**; a human merges it and Flux reconciles. No standing git-write credential; Flux
 never writes to Git. Roll back by `git revert`-ing the tag-bump PR here.
 
+**`notify-deploy.yml`** ([ADR-0018 addendum](https://github.com/TiagoJVO/beekeepingit/blob/main/docs/adr/0018-release-triggered-deploy-pipeline.md#addendum-2026-07-21-separate-the-approval-gate-environment-from-the-deploy-record-environment))
+fires on that merge and records the real deploy on `beekeepingit`'s
+[Deployments page](https://github.com/TiagoJVO/beekeepingit/deployments) under the plain
+`staging`/`production` environment — distinct from the `staging-gate`/`production-gate` entries
+that mark a release as merely _approved to publish_. Needs a `DEPLOY_NOTIFY_TOKEN` repo secret: a
+fine-grained PAT scoped to `TiagoJVO/beekeepingit` only, with **Deployments: Read and write**
+permission (nothing else — it cannot push code or open PRs there).
+
 ## Operating it
 
 ```sh
