@@ -1,0 +1,101 @@
+name: notify-deploy
+
+# Records the *real* deploy on beekeepingit's Deployments page (D-27/ADR-0018 addendum): the
+# moment a release-deploy.yml tag-bump PR actually merges to main here and Flux is about to
+# reconcile it — not the moment the release was approved to publish (that's recorded
+# separately, under staging-gate/production-gate, by beekeepingit's own workflow).
+#
+# Diffs the pushed commit(s) rather than parsing a commit message: PR merges on this repo can
+# be squash, merge-commit, or rebase (all three enabled), and only squash/rebase leave the
+# tag-bump commit message on HEAD — a merge commit's message is a generic "Merge pull request
+# #N ...". Reading the actual apps/<env>/beekeepingit-helmrelease.yaml diff instead works under
+# every strategy and reflects the true state Flux reconciles from.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/staging/beekeepingit-helmrelease.yaml"
+      - "apps/prod/beekeepingit-helmrelease.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: record deploy on beekeepingit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed env(s) and their new image version
+        id: detect
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.event.after }}"
+          if [ -z "$before" ] || [[ "$before" =~ ^0+$ ]]; then
+            echo "No previous commit to diff against (branch creation) — skipping."
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$before" "$after" -- \
+            apps/staging/beekeepingit-helmrelease.yaml apps/prod/beekeepingit-helmrelease.yaml)"
+          if [ -z "$changed" ]; then
+            echo "No tag-bump file changed in this push; nothing to record."
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          include=""
+          for f in $changed; do
+            case "$f" in
+              apps/staging/*) environment=staging ;;
+              apps/prod/*) environment=production ;;
+              *) continue ;;
+            esac
+            # release-deploy.yml's open-pr job sets every `tag:` line in the file to the same
+            # release version, so the first match is representative.
+            version="$(grep -m1 -E '^[[:space:]]*tag:' "$f" | sed -E 's/^[[:space:]]*tag:[[:space:]]*//')"
+            if [ -z "$version" ]; then
+              echo "::error::no tag: line found in $f"
+              exit 1
+            fi
+            include="${include}{\"environment\":\"${environment}\",\"version\":\"${version}\"},"
+          done
+          include="${include%,}"
+          if [ -z "$include" ]; then
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_work=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[${include}]}" >> "$GITHUB_OUTPUT"
+            echo "Deploy(s) to record: [${include}]"
+          fi
+
+      - name: Create deployment(s) on beekeepingit
+        if: steps.detect.outputs.has_work == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_NOTIFY_TOKEN }}
+          MATRIX: ${{ steps.detect.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          echo "$MATRIX" | jq -c '.include[]' | while read -r item; do
+            environment="$(echo "$item" | jq -r '.environment')"
+            version="$(echo "$item" | jq -r '.version')"
+
+            payload="$(jq -n \
+              --arg ref "$version" \
+              --arg env "$environment" \
+              --arg desc "GitOps main updated ($version); Flux reconciles onto $environment (polling, asynchronous)." \
+              '{ref: $ref, environment: $env, description: $desc, auto_merge: false, required_contexts: [], production_environment: ($env == "production")}')"
+            deployment_id="$(echo "$payload" | gh api repos/TiagoJVO/beekeepingit/deployments --input - --jq .id)"
+
+            status_payload="$(jq -n --arg env "$environment" \
+              '{state: "success", environment: $env, description: "GitOps merge landed; Flux polls and reconciles asynchronously."}')"
+            echo "$status_payload" | gh api "repos/TiagoJVO/beekeepingit/deployments/${deployment_id}/statuses" --input - >/dev/null
+
+            echo "Recorded deploy: $environment @ $version (deployment $deployment_id)"
+          done
