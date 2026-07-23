@@ -94,19 +94,19 @@ spec:
       # service yet, hence its absence here.
       services:
         identity:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
         organizations:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
         apiaries:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
         activities:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
         journeys:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
         todos:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
         sync:
-          tag: v0.0.1-rc4
+          tag: v0.0.1-rc5
     pwa:
       image:
         # One-off manual build (not CI yet), compiled with staging's real
@@ -115,7 +115,7 @@ spec:
         # (ADR-0018) the deployable PWA build moves into release-deploy.yml,
         # tagged by release version; the release tag-bump PR replaces this
         # manual tag once that lands (see FOLLOWUPS.md).
-        tag: v0.0.1-rc4
+        tag: v0.0.1-rc5
     networkpolicy:
       # scaleway-up.sh installs Traefik into its own `traefik` namespace, not
       # `kube-system` (charts/networkpolicy/values.yaml's default, correct
