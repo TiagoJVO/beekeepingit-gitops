@@ -65,6 +65,16 @@ spec:
       # this, and a mismatch fails login with redirect_uri mismatch (observed
       # on the first staging bring-up, D-26).
       appOrigin: https://beekeepingit-rc.melargil.pt
+    # #545 ONE-RELEASE transition gate. While true, the chart renders the
+    # migrator-adopt Jobs (hook weight 1) and grants `beekeepingit` temporary
+    # membership in each `<schema>_migrator`, so table ownership can move off
+    # the shared owner onto the per-schema migrator roles. Flip back to false
+    # in the NEXT release once the post-transition verification passes —
+    # leaving it on leaves beekeepingit a member of every migrator role, which
+    # defeats the isolation #545 exists for. Runbook: infra/README.md.
+    postgres:
+      migratorTransition:
+        enabled: true
     gateway:
       appHost: beekeepingit-rc.melargil.pt
       authHost: auth.beekeepingit-rc.melargil.pt
