@@ -33,7 +33,7 @@ spec:
     # git source, so this ref is the only thing pinning chart content. On `main`,
     # every merge re-rendered the chart onto the cluster ungated. Bumped by
     # release-deploy.yml's promotion PR (beekeepingit ADR-0018 addendum).
-    tag: v0.0.1-rc11
+    tag: v0.0.1-rc12
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
