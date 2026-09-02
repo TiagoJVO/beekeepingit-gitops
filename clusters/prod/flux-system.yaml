@@ -7,7 +7,11 @@
 # `kubectl apply -f clusters/prod/` bootstrap against a real prod cluster.
 #
 # TWO GitRepository sources (D-27/ADR-0018 repo split): MANIFESTS from this
-# beekeepingit-gitops repo, CHART from the beekeepingit code repo.
+# beekeepingit-gitops repo (that source tracks `main`); CHART from the
+# beekeepingit code repo (that source is pinned to a release tag and moves via
+# release-deploy.yml's promotion PR — or its `git revert` for a rollback,
+# ADR-0018 addendum; today's value is the #14 placeholder, prod being inert).
+# scripts/check-chart-pin.sh enforces the pin in CI (beekeepingit#611).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:

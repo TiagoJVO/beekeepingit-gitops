@@ -1,29 +1,30 @@
 name: GitOps CI
 
-# Validates the Flux GitOps manifests on every change: schema-checks every
-# GitRepository/Kustomization/HelmRelease against the upstream Flux CRD
-# schemas. No live cluster is used here — applying to a cluster is a manual
-# one-time bootstrap (README.md). Moved out of the beekeepingit code repo with
-# the manifests themselves (D-27/ADR-0018).
+# Validates the Flux GitOps manifests on every change, in two jobs:
+#   - kubeconform: schema-checks every GitRepository/Kustomization/HelmRelease
+#     against the upstream Flux CRD schemas.
+#   - chart-pin: scripts/check-chart-pin.sh — the chart source in every
+#     clusters/<env>/flux-system.yaml is pinned to a release tag (dev opts out
+#     by annotation), followed by its fixture suite, so every run proves the
+#     check is green on the real pins AND red on a `branch:` chart ref
+#     (ADR-0018 addendum, beekeepingit#611).
+# No live cluster is used here — applying to a cluster is a manual one-time
+# bootstrap (README.md). Moved out of the beekeepingit code repo with the
+# manifests themselves (D-27/ADR-0018). No `paths:` filter on purpose: the repo
+# is small and the chart-pin guard must run on every PR and every push to main.
 
 on:
   pull_request:
-    paths:
-      - "clusters/**"
-      - "apps/**"
-      - ".github/workflows/gitops-ci.yml"
   push:
     branches: [main]
-    paths:
-      - "clusters/**"
-      - "apps/**"
-      - ".github/workflows/gitops-ci.yml"
 
 permissions:
   contents: read
 
 jobs:
   kubeconform:
+    # The job `name:` is the status-check context a branch-protection rule keys on;
+    # renaming it silently detaches any required check. Same for `chart-pin` below.
     name: kubeconform (Flux CRD schemas)
     runs-on: ubuntu-latest
     steps:
@@ -41,3 +42,17 @@ jobs:
             -schema-location default
             -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
             clusters apps
+
+  chart-pin:
+    name: chart-pin (release ref on staging/prod)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: chart source pinned to a release tag
+        run: |
+          set -euo pipefail
+          # ubuntu-latest ships mikefarah yq v4; printing it makes a runner-image change fail loudly here.
+          yq --version
+          scripts/check-chart-pin.sh
+          scripts/check-chart-pin-test.sh

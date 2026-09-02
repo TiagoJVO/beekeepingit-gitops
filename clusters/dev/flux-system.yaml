@@ -8,6 +8,9 @@
 # sourced from the beekeepingit code repo. Flux reconciles the two
 # independently — the umbrella HelmRelease's chart.spec.sourceRef points at the
 # `beekeepingit` GitRepository below, everything else at `beekeepingit-gitops`.
+# Unlike staging/prod, whose chart source is pinned to a release tag, dev's
+# chart source tracks `main` on purpose — that difference is a decision (see
+# the annotation on that GitRepository below), not an oversight.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -27,6 +30,11 @@ kind: GitRepository
 metadata:
   name: beekeepingit
   namespace: flux-system
+  # dev tracks `main` for the chart on purpose: it is the post-merge pre-release
+  # loop and never a release-deploy.yml target. This annotation is the declared
+  # opt-out that scripts/check-chart-pin.sh honours (beekeepingit#611).
+  annotations:
+    gitops.beekeepingit/chart-ref-policy: track-main
 spec:
   interval: 1m
   url: https://github.com/TiagoJVO/beekeepingit

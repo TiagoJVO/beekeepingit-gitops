@@ -27,6 +27,7 @@ Each `clusters/<env>/flux-system.yaml` declares **two** `GitRepository` objects:
 | `clusters/{staging,prod}/cert-manager-issuer.yaml`            | the Let's Encrypt `ClusterIssuer` for that cluster                                                    |
 | `apps/<env>/beekeepingit-helmrelease.yaml`                    | the umbrella-chart `HelmRelease` (values mirror the code repo's `environments/<env>.yaml`)            |
 | `apps/<env>/{authentik,minio,observability}-helmrelease.yaml` | standalone upstream-chart `HelmRelease`s (ADR-0012/0013/0016)                                         |
+| `scripts/`                                                    | `check-chart-pin.sh` + fixtures: CI guard that the chart source is pinned (beekeepingit#611)          |
 
 `dev` runs on the local k3d cluster; `staging` on Scaleway Kapsule (D-26/ADR-0017); `prod` is inert
 scaffolding (deferred per D-26).
@@ -60,6 +61,16 @@ Per **[ADR-0018](https://github.com/TiagoJVO/beekeepingit/blob/main/docs/adr/001
 a published Release in the code repo makes CI publish the version's images and open a **tag-bump PR
 against this repo**; a human merges it and Flux reconciles. No standing git-write credential; Flux
 never writes to Git. Roll back by `git revert`-ing the tag-bump PR here.
+
+That promotion PR bumps the chart source's `ref.tag` in `clusters/<env>/flux-system.yaml` as well as
+the image tags — for a git source, that `ref` is the only thing pinning chart content, so
+staging/prod only ever render the chart of a published release. `dev` is the deliberate exception:
+its chart source tracks `main` (the post-merge pre-release loop) and declares it with the
+`gitops.beekeepingit/chart-ref-policy: track-main` annotation. `gitops-ci.yml`'s `chart-pin` job
+enforces this on every PR — and also that `apps/<env>/beekeepingit-helmrelease.yaml` sources its
+chart from that pinned `beekeepingit` GitRepository, so repointing the HelmRelease at a second,
+unpinned source cannot bypass the pin; run it locally with `bash scripts/check-chart-pin.sh` (needs
+`yq` v4).
 
 **`notify-deploy.yml`** ([ADR-0018 addendum](https://github.com/TiagoJVO/beekeepingit/blob/main/docs/adr/0018-release-triggered-deploy-pipeline.md#addendum-2026-07-21-separate-the-approval-gate-environment-from-the-deploy-record-environment))
 fires on that merge and records the real deploy on `beekeepingit`'s
