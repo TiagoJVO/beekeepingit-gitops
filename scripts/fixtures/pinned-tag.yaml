@@ -1,0 +1,38 @@
+# Test fixture for scripts/check-chart-pin.sh — NOT a real cluster; lives outside
+# clusters/ so neither Flux nor the kubeconform job ever reads it. Mirrors the
+# 3-document shape of clusters/<env>/flux-system.yaml (D-27/ADR-0018 addendum,
+# TiagoJVO/beekeepingit#611). Expected result is listed in check-chart-pin-test.sh.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: beekeepingit-gitops
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/TiagoJVO/beekeepingit-gitops
+  ref:
+    branch: main
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: beekeepingit
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/TiagoJVO/beekeepingit
+  ref:
+    tag: v9.9.9
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: beekeepingit-gitops
+  path: ./clusters/fixture
+  prune: true

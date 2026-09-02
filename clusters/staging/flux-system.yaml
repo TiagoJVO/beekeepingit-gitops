@@ -1,12 +1,16 @@
 # Bootstrap objects for the `staging` cluster (Scaleway Kapsule, D-26): where
 # Flux pulls from, and the self-referential Kustomization that keeps everything
 # under clusters/staging/ (including this file) reconciled from Git. See
-# README.md for the one-time `kubectl apply` bootstrap step and
-# clusters/dev/flux-system.yaml for the pattern this mirrors.
+# README.md for the one-time `kubectl apply` bootstrap step; clusters/dev/
+# flux-system.yaml has the same shape but deliberately tracks `main` for the
+# chart (dev is the pre-release loop, never a release-deploy target).
 #
 # TWO GitRepository sources (D-27/ADR-0018 repo split): the MANIFESTS
-# (clusters/, apps/) live in this beekeepingit-gitops repo; the Helm CHART is
-# sourced from the beekeepingit code repo. Both track `main`.
+# (clusters/, apps/) live in this beekeepingit-gitops repo and that source
+# tracks `main`; the Helm CHART is sourced from the beekeepingit code repo and
+# that source is pinned to a release tag, which moves via release-deploy.yml's
+# promotion PR — or its `git revert` for a rollback (ADR-0018 addendum).
+# scripts/check-chart-pin.sh enforces the pin in CI (beekeepingit#611).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:

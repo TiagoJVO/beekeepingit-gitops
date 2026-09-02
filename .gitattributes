@@ -1,0 +1,6 @@
+# First shell scripts in this repo (scripts/check-chart-pin*.sh, #611): a Windows
+# clone with core.autocrlf=true would otherwise check them out CRLF and bash under
+# WSL/CI would choke on "$'\r': command not found". Same for the manifests.
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
