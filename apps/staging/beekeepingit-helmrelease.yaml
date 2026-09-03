@@ -9,7 +9,11 @@
 # zero and DNS always tracks the current cluster. Records are DNS-only (not
 # proxied) so Let's Encrypt's HTTP-01 challenge can issue a trusted cert (see
 # cert-manager-issuer.yaml). Keep these values in sync with the code repo's
-# environments/staging.yaml.
+# environments/staging.yaml - that mirror is NOT the deployed source of truth,
+# this file is (D-27/ADR-0018). #556 is what happens when only the mirror is
+# updated: the chart's gateway subchart now hard-fails the render when
+# certManager is on and any TLS host or browser origin is a `.local` default
+# (gateway.assertPublicHostnames), so that drift can no longer reach ACME.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -65,9 +69,23 @@ spec:
       # this, and a mismatch fails login with redirect_uri mismatch (observed
       # on the first staging bring-up, D-26).
       appOrigin: https://beekeepingit-rc.melargil.pt
+      # The admin SPA's own origin (#449, ADR-0016/ADR-0020) - same rule as
+      # appOrigin above: it must match gateway.adminHost. Omitting it is what
+      # caused #556: the chart default (admin.beekeepingit.local:8443) then
+      # became every Go service's CORS_ALLOWED_ORIGINS entry and the
+      # beekeepingit-admin provider's OIDC redirect URI on a PUBLIC cluster.
+      adminOrigin: https://admin.beekeepingit-rc.melargil.pt
     gateway:
       appHost: beekeepingit-rc.melargil.pt
       authHost: auth.beekeepingit-rc.melargil.pt
+      # Third Ingress TLS host (#454). Absent until #556: the chart's dev
+      # default admin.beekeepingit.local landed in the Certificate's SAN and
+      # Let's Encrypt refused the whole order with
+      # 400 urn:ietf:params:acme:error:rejectedIdentifier, so renewal was dead
+      # from 2026-07-27. Requires the Cloudflare A record to exist FIRST - a
+      # host with no A record only swaps that for a failed HTTP-01 challenge,
+      # and one failed authorization invalidates the whole three-SAN order.
+      adminHost: admin.beekeepingit-rc.melargil.pt
       certManager:
         enabled: true
         clusterIssuer: letsencrypt-prod
