@@ -59,7 +59,74 @@ spec:
     # explicitly (the chart pins the official `postgres` upstream, so the Bitnami
     # image-catalog risk that motivated moving off Bitnami elsewhere doesn't bite —
     # see ADR-0016). Bundled Postgres, no Redis (dropped in the current chart).
-    global: { security: { allowInsecureImages: true } }
+    global:
+      security: { allowInsecureImages: true }
+      # --- BeekeepingIT-branded flow email (beekeepingit#858, follows beekeepingit#648) ---
+      #
+      # The umbrella chart renders ConfigMap `beekeepingit-authentik-email-templates`
+      # (charts/authentik/templates/email-templates-configmap.yaml) and sets
+      # AUTHENTIK_EMAIL__TEMPLATE_DIR=/templates on the config Secret this release already
+      # env-mounts. It cannot mount it: only THIS release owns a pod (ADR-0012/ADR-0016), so
+      # the mount lives here — the same chart-renders-it / external-release-consumes-it split
+      # as `blueprints.configMaps` below.
+      #
+      # `global.` and not `server.`/`worker.`: the chart concatenates
+      # `.Values.global.volumeMounts` into BOTH deployments (templates/server/deployment.yaml
+      # and templates/worker/deployment.yaml, checked against the pinned 2026.5.4), and both
+      # need it — the worker SENDS the mail, the server renders the admin-UI preview. One
+      # entry, so the two cannot drift apart. Nothing else reads these two globals: the bundled
+      # Bitnami postgresql subchart consumes only `global.postgresql.*`, `global.imageRegistry`,
+      # `global.storageClass` and `global.security.*`, and the chart ships no values.schema.json
+      # that an unknown global could trip.
+      #
+      # mountPath is `/templates/email`, NOT `/templates`, and the depth is load-bearing twice:
+      #
+      #   - Django resolves the template by the name the email stage asks for,
+      #     `email/account_confirmation.html`, so the file has to sit one directory BELOW
+      #     AUTHENTIK_EMAIL__TEMPLATE_DIR — and a ConfigMap key cannot contain `/`. Mounting the
+      #     whole ConfigMap one level deeper lands every flat key (`account_confirmation.html`)
+      #     at `email/<key>` with no `items:`/`path:` list to keep in sync here, so a second
+      #     template dropped into the chart's files/email/ ships without a PR against this repo.
+      #   - `email.template_dir` becomes `TEMPLATES[0]["DIRS"]`, which is Django's search path
+      #     for EVERY render, not just email, and DIRS is searched ahead of the per-app loader.
+      #     Mounting at `/templates` would put every key of this ConfigMap in front of every
+      #     top-level-named authentik template — the flow executor's and the static pages'
+      #     included. At `/templates/email` the shadowable namespace is confined to `email/*`.
+      #     Do not "simplify" this to `/templates` later. (Inside `email/*` the mount stays
+      #     key-agnostic by design: a key named `password_reset.html` would shadow that mail
+      #     too. Accepted — the content comes from the chart's git tree, and whoever can change
+      #     it can already change the blueprint that defines the OAuth2 clients.)
+      #
+      # Do NOT reach for `subPath:` instead. A subPath mount is a one-time copy that never
+      # receives ConfigMap updates, so every future template change would need a manual pod
+      # delete — forever, and silently.
+      #
+      # `optional: true` keeps the failure direction the feature was designed around: a missing
+      # ConfigMap leaves the directory empty, Django falls through to Authentik's own bundled
+      # template, and the mail still goes out — just unbranded. Without it, a ConfigMap that is
+      # absent (umbrella not yet reconciled, or one `delete configmap`) wedges every Authentik
+      # pod in ContainerCreating: a total auth outage in exchange for a cosmetic feature.
+      # Unbranded mail, never no mail — and never no login.
+      #
+      # ORDER MATTERS. With DEBUG off, Django wraps the loaders in `cached.Loader`, which caches
+      # a resolved template per NAME for the life of the process — and kubelet projecting a
+      # ConfigMap into an already-running pod does not restart it. So the chart tag that carries
+      # the ConfigMap has to reach the cluster BEFORE this mount does; if that order ever slips,
+      # roll authentik-server and authentik-worker once. dev and the helm-e2e job install the
+      # umbrella before this release, so they are ordered correctly by construction.
+      #
+      # None of this announces itself when it is wrong. Verify with a verification mail captured
+      # in the Mailpit sink — BeekeepingIT wordmark, honey #F0A81F primary button — and not with
+      # a pod that came up.
+      volumes:
+        - name: beekeepingit-email-templates
+          configMap:
+            name: beekeepingit-authentik-email-templates
+            optional: true
+      volumeMounts:
+        - name: beekeepingit-email-templates
+          mountPath: /templates/email
+          readOnly: true
     # Server/worker read the generated secret key + bootstrap creds + Postgres
     # connection from the umbrella-created Secret (see charts/authentik).
     authentik: { existingSecret: { secretName: beekeepingit-authentik-config } }
