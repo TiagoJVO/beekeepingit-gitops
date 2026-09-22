@@ -40,7 +40,24 @@ spec:
         name: authentik
         namespace: flux-system
   values:
-    global: { security: { allowInsecureImages: true } }
+    global:
+      security: { allowInsecureImages: true }
+      # BeekeepingIT-branded flow email (beekeepingit#858) — mounts the umbrella chart's
+      # `beekeepingit-authentik-email-templates` ConfigMap into BOTH Authentik deployments, so
+      # the branded account_confirmation.html actually renders instead of Authentik's own.
+      # Identical to apps/dev/authentik-helmrelease.yaml; see that file for why the mountPath
+      # is `/templates/email` and not `/templates`, why the ConfigMap is `optional: true`, why
+      # `subPath:` must not be used, and why the chart tag carrying the ConfigMap has to reach
+      # the cluster before this mount does.
+      volumes:
+        - name: beekeepingit-email-templates
+          configMap:
+            name: beekeepingit-authentik-email-templates
+            optional: true
+      volumeMounts:
+        - name: beekeepingit-email-templates
+          mountPath: /templates/email
+          readOnly: true
     authentik: { existingSecret: { secretName: beekeepingit-authentik-config } }
     server:
       replicas: 1
